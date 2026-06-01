@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Copy, Check, ThumbsUp, ThumbsDown, RotateCcw, User, Bot } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export interface Message {
   id: string;
@@ -22,6 +22,11 @@ interface ChatMessageProps {
 export function ChatMessage({ message, isLast }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
   const [feedback, setFeedback] = useState<"up" | "down" | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const isUser = message.role === "user";
 
@@ -63,12 +68,14 @@ export function ChatMessage({ message, isLast }: ChatMessageProps) {
           <span className="text-sm font-medium text-foreground">
             {isUser ? "You" : "Assistant"}
           </span>
-          <span className="text-xs text-muted-foreground">
-            {message.timestamp.toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
-          </span>
+          {mounted && (
+            <span className="text-xs text-muted-foreground">
+              {message.timestamp.toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </span>
+          )}
           {message.tokens && (
             <span className="text-xs text-muted-foreground px-1.5 py-0.5 bg-secondary rounded">
               {message.tokens} tokens
