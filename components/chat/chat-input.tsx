@@ -26,7 +26,11 @@ interface ChatInputProps {
 }
 
 const models = [
-  { id: "gpt-4", name: "GPT-4", description: "Most capable model" },
+  {
+    id: "openai/gpt-oss-20b",
+    name: "OpenAI GPT-OSS 20B",
+    description: "Most capable model",
+  },
   { id: "gpt-3.5-turbo", name: "GPT-3.5 Turbo", description: "Fast and efficient" },
   { id: "claude-3", name: "Claude 3", description: "Advanced reasoning" },
 ];
@@ -34,7 +38,7 @@ const models = [
 export function ChatInput({
   onSendMessage,
   isLoading = false,
-  model = "gpt-4",
+  model = "openai/gpt-oss-20b",
   onModelChange,
 }: ChatInputProps) {
   const [message, setMessage] = useState("");

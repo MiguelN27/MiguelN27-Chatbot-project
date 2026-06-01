@@ -143,7 +143,7 @@ export default function ChatPage() {
   const [activeChat, setActiveChat] = useState<string | null>("1");
   const [messages, setMessages] = useState<Message[]>(sampleMessages);
   const [isLoading, setIsLoading] = useState(false);
-  const [model, setModel] = useState("gpt-4");
+  const [model, setModel] = useState("openai/gpt-oss-20b");
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [rightSidebarOpen, setRightSidebarOpen] = useState(true);
 
@@ -189,31 +189,58 @@ export default function ChatPage() {
     }
   }, [activeChat]);
 
-  const handleSendMessage = useCallback((content: string) => {
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: "user",
-      content,
-      timestamp: new Date(),
-      tokens: Math.floor(content.split(" ").length * 1.3),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-    setIsLoading(true);
-
-    // Simulate AI response
-    setTimeout(() => {
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content: `I understand you're asking about "${content.slice(0, 50)}...". This is a simulated response to demonstrate the chat interface. In a real implementation, this would connect to an AI model API.`,
+  const handleSendMessage = useCallback(
+    async (content: string) => {
+      const userMessage: Message = {
+        id: Date.now().toString(),
+        role: "user",
+        content,
         timestamp: new Date(),
-        tokens: 48,
+        tokens: Math.floor(content.split(" ").length * 1.3),
       };
-      setMessages((prev) => [...prev, assistantMessage]);
-      setIsLoading(false);
-    }, 1500);
-  }, []);
+
+      setMessages((prev) => [...prev, userMessage]);
+      setIsLoading(true);
+
+      try {
+        const response = await fetch("/api/groq", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ message: content, model }),
+        });
+
+        const result = await response.json();
+        const assistantText =
+          result?.data?.text || result?.data || result?.message ||
+          "I couldn't get a response from the GROQ API. Please try again.";
+
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: "assistant",
+          content: assistantText,
+          timestamp: new Date(),
+          tokens: Math.max(1, Math.floor(String(assistantText).split(" ").length * 1.1)),
+        };
+
+        setMessages((prev) => [...prev, assistantMessage]);
+      } catch (error) {
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: "assistant",
+          content:
+            "There was an error connecting to the GROQ API. Please verify the API configuration and try again.",
+          timestamp: new Date(),
+          tokens: 12,
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [model]
+  );
 
   return (
     <div className="h-screen flex bg-background">
