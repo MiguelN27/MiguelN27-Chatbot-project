@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { ChatSidebar, ChatHistory } from "@/components/chat/chat-sidebar";
 import { TokenStats } from "@/components/chat/token-stats";
 import { ChatArea } from "@/components/chat/chat-area";
@@ -13,6 +13,31 @@ import {
   PanelRightOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+const LOCAL_STORAGE_KEY = "chat_messages_";
+const CHATS_STORAGE_KEY = "chat_list";
+const ACTIVE_CHAT_STORAGE_KEY = "active_chat";
+const getStorageKey = (chatId: string) => `${LOCAL_STORAGE_KEY}${chatId}`;
+
+function sanitizeMarkdownText(text: string) {
+  return text
+    .replace(/```[\s\S]*?```/g, (match) =>
+      match.replace(/```/g, "\n").trim()
+    )
+    .replace(/(^|\n)#+\s*/g, "$1")
+    .replace(/(^|\n)>\s*/g, "$1")
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/__(.*?)__/g, "$1")
+    .replace(/\*(.*?)\*/g, "$1")
+    .replace(/_(.*?)_/g, "$1")
+    .replace(/~~(.*?)~~/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\[(.*?)\]\((.*?)\)/g, "$1")
+    .replace(/(^|\n)[-\*+]\s+/g, "$1")
+    .replace(/\r\n?/g, "\n")
+    .replace(/\n{2,}/g, "\n\n")
+    .trim();
+}
 
 // Sample data
 const initialChats: ChatHistory[] = [
@@ -141,23 +166,91 @@ This ensures you don't have stale event listeners or memory leaks!`,
 export default function ChatPage() {
   const [chats, setChats] = useState<ChatHistory[]>(initialChats);
   const [activeChat, setActiveChat] = useState<string | null>("1");
-  const [messages, setMessages] = useState<Message[]>(sampleMessages);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
   const [model, setModel] = useState("openai/gpt-oss-20b");
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [rightSidebarOpen, setRightSidebarOpen] = useState(true);
 
-  // Token stats
-  const [tokenStats] = useState({
-    promptTokens: 42,
-    completionTokens: 557,
-    totalTokens: 599,
-    tokensUsedToday: 15420,
+  // Session token stats (accumulated during this browser session)
+  const [tokenStats, setTokenStats] = useState({
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+    tokensUsedToday: 0,
     dailyLimit: 100000,
     averageResponseTime: 847,
     totalConversations: 24,
-    estimatedCost: 0.0089,
+    estimatedCost: 0.0,
   });
+
+  // Load chats from localStorage on mount
+  useEffect(() => {
+    const storedChats = localStorage.getItem(CHATS_STORAGE_KEY);
+    if (storedChats) {
+      try {
+        setChats(JSON.parse(storedChats));
+      } catch (error) {
+        console.error("Failed to parse stored chats:", error);
+        setChats(initialChats);
+      }
+    }
+  }, []);
+
+  // Load active chat from localStorage on mount
+  useEffect(() => {
+    const storedActiveChat = localStorage.getItem(ACTIVE_CHAT_STORAGE_KEY);
+    if (storedActiveChat) {
+      setActiveChat(storedActiveChat);
+    }
+  }, []);
+
+  // Save chats to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem(CHATS_STORAGE_KEY, JSON.stringify(chats));
+  }, [chats]);
+
+  // Save active chat to localStorage whenever it changes
+  useEffect(() => {
+    if (activeChat) {
+      localStorage.setItem(ACTIVE_CHAT_STORAGE_KEY, activeChat);
+    }
+  }, [activeChat]);
+  useEffect(() => {
+    if (!activeChat) return;
+
+    const storedMessages = localStorage.getItem(getStorageKey(activeChat));
+    if (storedMessages) {
+      try {
+        const parsed = JSON.parse(storedMessages) as Array<{
+          id: string;
+          role: "user" | "assistant";
+          content: string;
+          timestamp: string;
+          tokens: number;
+        }>;
+
+        setMessages(
+          parsed.map((message) => ({
+            ...message,
+            timestamp: new Date(message.timestamp),
+          }))
+        );
+      } catch (error) {
+        console.error("Failed to parse stored chat history:", error);
+        setMessages(activeChat === "1" ? sampleMessages : []);
+      }
+    } else {
+      setMessages(activeChat === "1" ? sampleMessages : []);
+    }
+  }, [activeChat]);
+
+  useEffect(() => {
+    if (!activeChat) return;
+    localStorage.setItem(getStorageKey(activeChat), JSON.stringify(messages));
+  }, [messages, activeChat]);
 
   const handleNewChat = useCallback(() => {
     const newChat: ChatHistory = {
@@ -173,24 +266,31 @@ export default function ChatPage() {
 
   const handleSelectChat = useCallback((id: string) => {
     setActiveChat(id);
-    // In a real app, you'd fetch messages for this chat
-    if (id === "1") {
-      setMessages(sampleMessages);
-    } else {
-      setMessages([]);
-    }
   }, []);
 
-  const handleDeleteChat = useCallback((id: string) => {
-    setChats((prev) => prev.filter((chat) => chat.id !== id));
-    if (activeChat === id) {
-      setActiveChat(null);
-      setMessages([]);
+  const handleClearConversation = useCallback(() => {
+    setMessages([]);
+    if (activeChat) {
+      localStorage.removeItem(getStorageKey(activeChat));
     }
   }, [activeChat]);
 
+  const handleDeleteChat = useCallback(
+    (id: string) => {
+      setChats((prev) => prev.filter((chat) => chat.id !== id));
+      localStorage.removeItem(getStorageKey(id));
+      if (activeChat === id) {
+        setActiveChat(null);
+        setMessages([]);
+      }
+    },
+    [activeChat]
+  );
+
   const handleSendMessage = useCallback(
     async (content: string) => {
+      setErrorMessage("");
+
       const userMessage: Message = {
         id: Date.now().toString(),
         role: "user",
@@ -200,6 +300,7 @@ export default function ChatPage() {
       };
 
       setMessages((prev) => [...prev, userMessage]);
+      setInputValue("");
       setIsLoading(true);
 
       try {
@@ -211,10 +312,60 @@ export default function ChatPage() {
           body: JSON.stringify({ message: content, model }),
         });
 
+        if (!response.ok) {
+          const errorPayload = await response.json().catch(() => null);
+          const serverMessage =
+            errorPayload?.error || errorPayload?.message ||
+            `Server responded with status ${response.status}.`;
+          throw new Error(serverMessage);
+        }
+
         const result = await response.json();
-        const assistantText =
-          result?.data?.text || result?.data || result?.message ||
-          "I couldn't get a response from the GROQ API. Please try again.";
+
+        // If the API returned a usage object, extract prompt/completion tokens
+        // and accumulate them for the session. Support common field names.
+        try {
+          const usage = result?.usage ?? null;
+          if (usage) {
+            const prompt = Number(
+              usage.prompt_tokens ?? usage.promptTokens ?? usage.prompt ?? 0
+            );
+            const completion = Number(
+              usage.completion_tokens ??
+                usage.completionTokens ??
+                usage.completion ??
+                0
+            );
+
+            setTokenStats((prev) => ({
+              ...prev,
+              promptTokens: prev.promptTokens + (isNaN(prompt) ? 0 : prompt),
+              completionTokens:
+                prev.completionTokens + (isNaN(completion) ? 0 : completion),
+              totalTokens:
+                prev.totalTokens + (isNaN(prompt) ? 0 : prompt) + (isNaN(completion) ? 0 : completion),
+              // Update daily/session usage so the progress bar reflects the new totals
+              tokensUsedToday:
+                prev.tokensUsedToday + (isNaN(prompt) ? 0 : prompt) + (isNaN(completion) ? 0 : completion),
+              // Optionally update estimated cost slightly (placeholder rate)
+              estimatedCost:
+                prev.estimatedCost + ((isNaN(prompt) ? 0 : prompt) + (isNaN(completion) ? 0 : completion)) * 0.000001,
+            }));
+          }
+        } catch (e) {
+          // ignore usage parsing errors
+        }
+
+        const rawAssistantText =
+          result?.data?.text || result?.data || result?.message;
+
+        if (!rawAssistantText || typeof rawAssistantText !== "string") {
+          throw new Error(
+            "The GROQ API returned an unexpected response. Please try again."
+          );
+        }
+
+        const assistantText = sanitizeMarkdownText(rawAssistantText);
 
         const assistantMessage: Message = {
           id: (Date.now() + 1).toString(),
@@ -226,15 +377,14 @@ export default function ChatPage() {
 
         setMessages((prev) => [...prev, assistantMessage]);
       } catch (error) {
-        const assistantMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          role: "assistant",
-          content:
-            "There was an error connecting to the GROQ API. Please verify the API configuration and try again.",
-          timestamp: new Date(),
-          tokens: 12,
-        };
-        setMessages((prev) => [...prev, assistantMessage]);
+        const humanMessage =
+          error instanceof Error && error.message
+            ? error.message
+            : "There was an error connecting to the GROQ API. Please check your connection and try again.";
+
+        setErrorMessage(
+          `Sorry, something went wrong. ${humanMessage}`
+        );
       } finally {
         setIsLoading(false);
       }
@@ -282,10 +432,14 @@ export default function ChatPage() {
       <main className="flex-1 flex flex-col min-w-0">
         <ChatArea
           messages={messages}
+          inputValue={inputValue}
+          onInputChange={setInputValue}
           onSendMessage={handleSendMessage}
           isLoading={isLoading}
+          errorMessage={errorMessage}
           model={model}
           onModelChange={setModel}
+          onClearConversation={handleClearConversation}
         />
       </main>
 

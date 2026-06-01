@@ -24,7 +24,7 @@ export async function POST(request: Request) {
     }
 
     const groqApiUrl = process.env.GROQ_API_URL;
-    const groqApiKey = process.env.GROQ_API_KEY ?? process.env.api;
+    const groqApiKey = process.env.GROQ_API_KEY;
 
     if (!groqApiUrl) {
       return NextResponse.json(
@@ -36,31 +36,40 @@ export async function POST(request: Request) {
       );
     }
 
-      // Validate URL early to provide a clearer error when it's a placeholder
-      try {
-        // This will throw for invalid URLs like placeholders
-        // eslint-disable-next-line no-new
-        new URL(groqApiUrl);
-      } catch (err) {
-        return NextResponse.json(
-          {
-            error:
-              "GROQ_API_URL appears invalid. Replace the placeholder with your provider's endpoint (e.g. Sanity).",
-            value: groqApiUrl,
-          },
-          { status: 500 }
-        );
-      }
+    if (!groqApiKey) {
+      return NextResponse.json(
+        {
+          error:
+            "GROQ API key is not configured. Set GROQ_API_KEY in your environment.",
+        },
+        { status: 500 }
+      );
+    }
+
+    // Validate URL early to provide a clearer error when it's a placeholder
+    try {
+      // This will throw for invalid URLs like placeholders
+      // eslint-disable-next-line no-new
+      new URL(groqApiUrl);
+    } catch (err) {
+      return NextResponse.json(
+        {
+          error:
+            "GROQ_API_URL appears invalid. Replace the placeholder with your provider's endpoint (e.g. Sanity).",
+          value: groqApiUrl,
+        },
+        { status: 500 }
+      );
+    }
+
+    const authorization = groqApiKey.trim().toLowerCase().startsWith("bearer ")
+      ? groqApiKey.trim()
+      : `Bearer ${groqApiKey.trim()}`;
 
     const headers: Record<string, string> = {
+      Authorization: authorization,
       "Content-Type": "application/json",
     };
-
-    if (groqApiKey) {
-      headers.Authorization = groqApiKey.trim().startsWith("Bearer ")
-        ? groqApiKey.trim()
-        : `Bearer ${groqApiKey.trim()}`;
-    }
 
     const modelName = model || "openai/gpt-oss-20b";
     const requestBody = {
@@ -90,7 +99,10 @@ export async function POST(request: Request) {
     }
 
     const responseText = extractResponseText(data);
-    return NextResponse.json({ data: responseText ?? data });
+    // Include the provider usage object when available so the client can
+    // accumulate token counts for the session.
+    const usage = data && typeof data === "object" ? data.usage ?? null : null;
+    return NextResponse.json({ data: responseText ?? data, usage });
   } catch (error) {
     return NextResponse.json(
       { error: "Unexpected error calling GROQ API.", details: String(error) },

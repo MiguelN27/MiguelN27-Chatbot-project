@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, KeyboardEvent } from "react";
+import { useRef, useEffect, KeyboardEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -19,6 +19,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 interface ChatInputProps {
+  inputValue: string;
+  onInputChange: (value: string) => void;
   onSendMessage: (message: string) => void;
   isLoading?: boolean;
   model?: string;
@@ -36,12 +38,13 @@ const models = [
 ];
 
 export function ChatInput({
+  inputValue,
+  onInputChange,
   onSendMessage,
   isLoading = false,
   model = "openai/gpt-oss-20b",
   onModelChange,
 }: ChatInputProps) {
-  const [message, setMessage] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-resize textarea
@@ -53,12 +56,13 @@ export function ChatInput({
         200
       )}px`;
     }
-  }, [message]);
+  }, [inputValue]);
 
   const handleSend = () => {
-    if (message.trim() && !isLoading) {
-      onSendMessage(message.trim());
-      setMessage("");
+    const trimmedMessage = inputValue.trim();
+    if (trimmedMessage && !isLoading) {
+      onSendMessage(trimmedMessage);
+      onInputChange("");
     }
   };
 
@@ -127,8 +131,8 @@ export function ChatInput({
           {/* Textarea */}
           <Textarea
             ref={textareaRef}
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
+            value={inputValue}
+            onChange={(e) => onInputChange(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Send a message..."
             className="flex-1 min-h-[40px] max-h-[200px] resize-none bg-transparent border-0 focus-visible:ring-0 focus-visible:ring-offset-0 text-foreground placeholder:text-muted-foreground"
@@ -149,7 +153,7 @@ export function ChatInput({
               size="icon"
               className="h-8 w-8 bg-primary hover:bg-primary/90 text-primary-foreground"
               onClick={handleSend}
-              disabled={!message.trim() || isLoading}
+              disabled={!inputValue.trim() || isLoading}
             >
               <Send className="h-4 w-4" />
             </Button>
