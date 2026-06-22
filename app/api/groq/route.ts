@@ -14,9 +14,27 @@ export async function POST(request: Request) {
     }
 
     const message = body?.message ?? (typeof body === "string" ? body : rawText);
+    const messagesFromClient = Array.isArray(body?.messages)
+      ? body.messages
+      : null;
     const model = body?.model;
 
-    if (!message || (typeof message === "string" && message.trim() === "")) {
+    const normalizedMessages = (messagesFromClient ?? [])
+      .map((msg: any) => ({
+        role: msg?.role,
+        content: msg?.content,
+      }))
+      .filter(
+        (msg: any) =>
+          (msg.role === "user" || msg.role === "assistant" || msg.role === "system") &&
+          typeof msg.content === "string" &&
+          msg.content.trim() !== ""
+      );
+
+    if (
+      normalizedMessages.length === 0 &&
+      (!message || (typeof message === "string" && message.trim() === ""))
+    ) {
       return NextResponse.json(
         { error: "Missing message in request body.", received: body ?? rawText },
         { status: 400 }
@@ -74,12 +92,15 @@ export async function POST(request: Request) {
     const modelName = model || "openai/gpt-oss-20b";
     const requestBody = {
       model: modelName,
-      messages: [
-        {
-          role: "user",
-          content: message,
-        },
-      ],
+      messages:
+        normalizedMessages.length > 0
+          ? normalizedMessages
+          : [
+              {
+                role: "user",
+                content: message,
+              },
+            ],
     };
 
     const groqResponse = await fetch(groqApiUrl, {

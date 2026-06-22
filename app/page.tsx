@@ -299,6 +299,11 @@ export default function ChatPage() {
         tokens: Math.floor(content.split(" ").length * 1.3),
       };
 
+      const conversationForApi = [...messages, userMessage].map((message) => ({
+        role: message.role,
+        content: message.content,
+      }));
+
       setMessages((prev) => [...prev, userMessage]);
       setInputValue("");
       setIsLoading(true);
@@ -309,7 +314,11 @@ export default function ChatPage() {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ message: content, model }),
+          body: JSON.stringify({
+            message: content,
+            messages: conversationForApi,
+            model,
+          }),
         });
 
         if (!response.ok) {
@@ -389,7 +398,7 @@ export default function ChatPage() {
         setIsLoading(false);
       }
     },
-    [model]
+    [messages, model]
   );
 
   return (
